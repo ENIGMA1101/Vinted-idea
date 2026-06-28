@@ -1,0 +1,178 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Platform {
+  EBAY
+}
+
+enum SubscriptionTier {
+  FREE
+  STARTER
+  PRO
+  BUSINESS
+}
+
+enum Rank {
+  BRONZE
+  SILVER
+  GOLD
+  PLATINUM
+  DIAMOND
+}
+
+enum OrderStatus {
+  NEW
+  PAID
+  SHIPPED
+  COMPLETED
+  CANCELLED
+}
+
+enum ListingStatus {
+  ACTIVE
+  ENDED
+  SOLD
+  DRAFT
+}
+
+enum SyncType {
+  ORDERS
+  LISTINGS
+  FULL
+}
+
+enum SyncStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model User {
+  id               String           @id @default(cuid())
+  email            String           @unique
+  passwordHash     String
+  name             String?
+  stripeCustomerId String?          @unique
+  subscriptionTier SubscriptionTier @default(FREE)
+  subscriptionId   String?
+  expPoints        Int              @default(0)
+  currentRank      Rank             @default(BRONZE)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  connectedAccounts ConnectedAccount[]
+}
+
+model ConnectedAccount {
+  id             String    @id @default(cuid())
+  userId         String
+  platform       Platform
+  label          String
+  externalUserId String?
+  accessToken    String
+  refreshToken   String?
+  tokenExpiresAt DateTime?
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders   Order[]
+  listings Listing[]
+  syncLogs SyncLog[]
+
+  @@unique([userId, platform, externalUserId])
+  @@index([userId])
+}
+
+model Order {
+  id                 String      @id @default(cuid())
+  connectedAccountId String
+  platform           Platform
+  externalOrderId    String
+  status             OrderStatus @default(NEW)
+  total              Decimal     @db.Decimal(10, 2)
+  currency           String      @default("GBP")
+  buyerUsername      String?
+  buyerEmail         String?
+  itemTitle          String?
+  itemCount          Int         @default(1)
+  shippingAddress    Json?
+  platformCreatedAt  DateTime
+  completedAt        DateTime?
+  syncedAt           DateTime    @default(now())
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  connectedAccount ConnectedAccount @relation(fields: [connectedAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([connectedAccountId, externalOrderId])
+  @@index([connectedAccountId, status])
+  @@index([platformCreatedAt])
+}
+
+model Listing {
+  id                 String        @id @default(cuid())
+  connectedAccountId String
+  platform           Platform
+  externalListingId  String
+  title              String
+  price              Decimal       @db.Decimal(10, 2)
+  currency           String        @default("GBP")
+  status             ListingStatus @default(ACTIVE)
+  quantity           Int           @default(1)
+  quantitySold       Int           @default(0)
+  category           String?
+  imageUrl           String?
+  viewCount          Int           @default(0)
+  watchCount         Int           @default(0)
+  platformCreatedAt  DateTime?
+  syncedAt           DateTime      @default(now())
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  connectedAccount ConnectedAccount @relation(fields: [connectedAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([connectedAccountId, externalListingId])
+  @@index([connectedAccountId, status])
+}
+
+model SyncLog {
+  id                 String     @id @default(cuid())
+  connectedAccountId String
+  syncType           SyncType
+  status             SyncStatus @default(RUNNING)
+  ordersSynced       Int        @default(0)
+  listingsSynced     Int        @default(0)
+  apiCallsUsed       Int        @default(0)
+  errorMessage       String?
+  startedAt          DateTime   @default(now())
+  completedAt        DateTime?
+
+  connectedAccount ConnectedAccount @relation(fields: [connectedAccountId], references: [id], onDelete: Cascade)
+
+  @@index([connectedAccountId, startedAt])
+}
+
+model OAuthState {
+  id        String   @id @default(cuid())
+  userId    String
+  state     String   @unique
+  label     String
+  platform  Platform
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([state])
+  @@index([expiresAt])
+}
